@@ -1,48 +1,63 @@
 // src/services/schedule.ts
 import { createClient } from '@supabase/supabase-js';
-import type { GameSchedule } from '@/types/schedule';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// 💡 매개변수에 team을 추가합니다. (기본값은 'SSG')
-export async function getMonthlySchedule(year: number, month: number, team: string = 'SSG'): Promise<GameSchedule[]> {
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextYear = month === 12 ? year + 1 : year;
+export async function getMonthlySchedule(
+  year: number | string, 
+  month?: number | string, 
+  team?: string
+): Promise<any[]> {
+  
+  // 💡 파라미터가 밀렸을 때의 자동 보정 로직 (03-전체-01 에러 방지)
+  let y = Number(year);
+  let m = Number(month);
+  let t = team || '전체';
+
+  if (typeof month === 'string' && isNaN(Number(month))) {
+    t = month;
+    m = Number(year);
+    y = 2026;
+  } else if (!month) {
+    m = Number(year);
+    y = 2026;
+  }
+
+  const startDate = `${y}-${String(m).padStart(2, '0')}-01`;
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextYear = m === 12 ? y + 1 : y;
   const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
 
   try {
-    // 1. 기본적으로 해당 월의 데이터를 가져옵니다. (is_ssg_landers 필터 삭제!)
     let query = supabase
       .from('schedules')
       .select('*')
       .gte('date', startDate)
       .lt('date', endDate);
 
-    // 2. 💡 핵심: '전체'가 아니면, 선택한 팀(team)이 홈이거나 원정인 경기만 가져옵니다!
-    if (team !== '전체') {
-      query = query.or(`home_team.eq.${team},away_team.eq.${team}`);
+    if (t !== '전체') {
+      query = query.or(`home_team.eq.${t},away_team.eq.${t}`);
     }
 
-    // 3. 날짜 및 시간순으로 정렬해서 가져오기
     const { data, error } = await query
       .order('date', { ascending: true })
       .order('time', { ascending: true });
 
     if (error) throw error;
 
+    // 💡 핵심: GameCard가 건드려지지 않도록, GameCard가 원하는 camelCase 이름으로 완벽 포장!
     return data.map((row) => ({
       id: row.id,
       date: row.date,
       time: row.time,
-      homeTeam: row.home_team,
-      awayTeam: row.away_team,
+      homeTeam: row.home_team,    // GameCard가 찾는 이름!
+      awayTeam: row.away_team,    // GameCard가 찾는 이름!
       homeScore: row.home_score,
       awayScore: row.away_score,
       location: row.location,
-      status: row.status as any,
+      status: row.status,
       isSsgLanders: row.is_ssg_landers
     }));
   } catch (error) {

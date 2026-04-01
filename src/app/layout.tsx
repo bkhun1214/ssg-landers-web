@@ -29,7 +29,6 @@ export default function RootLayout({
                 <li><a href="/" className="hover:text-gray-200 transition-colors">홈</a></li>
                 <li><a href="/schedule" className="hover:text-gray-200 transition-colors">전체일정</a></li>
                 <li><a href="/stats" className="hover:text-gray-200 transition-colors">기록실</a></li>
-                <li><a href="/history" className="hover:text-gray-200 transition-colors">과거기록</a></li>
               </ul>
             </nav>
 
