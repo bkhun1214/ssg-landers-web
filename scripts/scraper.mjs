@@ -9,93 +9,83 @@ async function scrapeKbo() {
   const page = await browser.newPage();
 
   try {
-    console.log('KBO 공식 홈페이지 접속 중...');
+    // 1. 현재 날짜 정보 가져오기
+    const now = new Date();
+    // 한국 시간(KST) 보정 (GitHub 서버는 UTC 기준이므로 9시간 더해줌)
+    const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+    
+    const year = kstNow.getFullYear().toString();
+    const month = (kstNow.getMonth() + 1).toString().padStart(2, '0');
+    const todayStr = kstNow.toISOString().split('T')[0]; // 예: "2026-04-01"
+
+    console.log(`[${todayStr}] 업데이트 시작 - ${year}년 ${month}월 데이터를 확인합니다.`);
+
     await page.goto('https://www.koreabaseball.com/Schedule/Schedule.aspx');
     
-    const targetYear = '2026';
-    // 💡 정규시즌이 열리는 3월부터 10월까지 배열로 준비합니다.
-    const months = ['03', '04', '05', '06', '07', '08', '09', '10'];
-    
-    let allSchedules = []; // 1년 치 데이터를 모두 담을 큰 바구니
+    // 2. 현재 연도와 월 선택
+    await page.selectOption('select[id$="ddlYear"]', year);
+    await page.selectOption('select[id$="ddlMonth"]', month);
+    await page.waitForTimeout(3000);
 
-    // 각 월별로 페이지를 변경하며 데이터를 긁어옵니다.
-    for (const month of months) {
-      console.log(`${targetYear}년 ${month}월 데이터 수집 중...`);
+    // 3. 해당 월의 데이터 파싱
+    const monthSchedules = await page.evaluate(({ year }) => {
+      const rows = Array.from(document.querySelectorAll('.tbl-type06 tbody tr'));
+      let currentDate = '';
       
-      await page.selectOption('select[id$="ddlYear"]', targetYear);
-      await page.selectOption('select[id$="ddlMonth"]', month);
-      
-      // 페이지가 로딩될 때까지 충분히 기다려줍니다 (3초)
-      await page.waitForTimeout(3000);
+      return rows.map(row => {
+        if (row.innerText.includes('데이터가 없습니다')) return null;
 
-      const monthData = await page.evaluate(({ targetYear }) => {
-        const rows = Array.from(document.querySelectorAll('.tbl-type06 tbody tr'));
-        let currentDate = '';
+        const dayCell = row.querySelector('.day');
+        if (dayCell) {
+          const match = dayCell.innerText.match(/(\d{2})\.(\d{2})/);
+          if (match) currentDate = `${year}-${match[1]}-${match[2]}`;
+        }
+
+        const playCell = row.querySelector('.play');
+        if (!playCell || !currentDate) return null;
+
+        const teams = Array.from(playCell.querySelectorAll('span'))
+          .map(s => s.innerText.trim())
+          .filter(t => t !== 'vs' && t !== '');
+
+        if (teams.length < 2) return null;
         
-        return rows.map(row => {
-          if (row.innerText.includes('데이터가 없습니다')) return null;
+        const scoreText = playCell.querySelector('em')?.innerText.trim() || "";
+        let awayScore = null, homeScore = null;
+        if (scoreText.includes(':')) {
+          [awayScore, homeScore] = scoreText.split(':').map(Number);
+        }
 
-          const dayCell = row.querySelector('.day');
-          if (dayCell) {
-            const match = dayCell.innerText.match(/(\d{2})\.(\d{2})/);
-            if (match) currentDate = `${targetYear}-${match[1]}-${match[2]}`;
-          }
+        const time = row.querySelector('.time')?.innerText.trim() || '18:30';
+        const location = Array.from(row.querySelectorAll('td')).pop()?.innerText.trim() || '';
 
-          const playCell = row.querySelector('.play');
-          if (!playCell || !currentDate) return null;
+        return {
+          id: `${currentDate}-${teams[1]}-${teams[0]}`,
+          date: currentDate,
+          time: time,
+          away_team: teams[0],
+          home_team: teams[1],
+          away_score: awayScore,
+          home_score: homeScore,
+          location: location,
+          status: row.innerText.includes('종료') ? 'FINISHED' : 
+                  (row.innerText.includes('취소') ? 'CANCELLED' : 
+                  (scoreText.includes(':') ? 'PROGRESS' : 'SCHEDULED')),
+          is_ssg_landers: teams.some(t => t.includes('SSG'))
+        };
+      }).filter(i => i !== null);
+    }, { year });
 
-          const teams = Array.from(playCell.querySelectorAll('span'))
-            .map(s => s.innerText.trim())
-            .filter(t => t !== 'vs' && t !== '');
-
-          if (teams.length < 2) return null;
-
-          const awayTeam = teams[0];
-          const homeTeam = teams[1];
-          
-          const scoreText = playCell.querySelector('em')?.innerText.trim() || "";
-          let awayScore = null;
-          let homeScore = null;
-          if (scoreText.includes(':')) {
-            const scores = scoreText.split(':').map(Number);
-            awayScore = scores[0];
-            homeScore = scores[1];
-          }
-
-          const time = row.querySelector('.time')?.innerText.trim() || '18:30';
-          const tds = Array.from(row.querySelectorAll('td'));
-          const location = tds[tds.length - 2]?.innerText.trim() || '미정';
-
-          let status = 'SCHEDULED';
-          if (row.innerText.includes('종료')) status = 'FINISHED';
-          else if (row.innerText.includes('취소')) status = 'CANCELLED';
-          else if (scoreText.includes(':')) status = 'PROGRESS';
-
-          return {
-            id: `${currentDate}-${homeTeam}-${awayTeam}`,
-            date: currentDate,
-            time: time,
-            away_team: awayTeam,
-            home_team: homeTeam,
-            away_score: awayScore,
-            home_score: homeScore,
-            location: location,
-            status: status,
-            is_ssg_landers: awayTeam.includes('SSG') || homeTeam.includes('SSG')
-          };
-        }).filter(i => i !== null);
-      }, { targetYear });
-
-      allSchedules.push(...monthData); // 이번 달 데이터를 큰 바구니에 합칩니다.
-    }
-
-    console.log(`[크롤링 완료] 1년 치 총 ${allSchedules.length}개의 경기를 찾았습니다.`);
+    // 💡 파트너님의 핵심 요청: "오늘 경기"만 혹은 "이번 달 경기"만 업데이트
+    // 여기서는 이번 달 페이지를 한 번 불렀으니, 이번 달 130건을 한 번에 upsert 합니다.
+    // 어차피 과거 데이터는 upsert 시 내용이 같으면 아무 일도 일어나지 않으므로 안전합니다.
     
-    if (allSchedules.length > 0) {
-      console.log('Supabase 창고에 데이터를 저장합니다...');
-      const { error } = await supabase.from('schedules').upsert(allSchedules);
+    console.log(`총 ${monthSchedules.length}건의 데이터를 확인했습니다.`);
+    
+    if (monthSchedules.length > 0) {
+      const { error } = await supabase.from('schedules').upsert(monthSchedules);
       if (error) throw error;
-      console.log('✅ 전체 데이터 저장 완료!');
+      console.log('✅ 데이터베이스 동기화 완료!');
     }
 
   } catch (err) {
