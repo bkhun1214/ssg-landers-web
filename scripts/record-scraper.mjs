@@ -1,15 +1,14 @@
+// scripts/record-scraper.mjs (디버깅 강화 버전)
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-// 💡 수집할 모든 타겟 URL을 배열에 넣습니다. (일단 핵심 4개만 먼저 테스트용으로 넣었습니다)
 const TARGETS = [
   { type: '팀', category: '순위', url: 'https://www.koreabaseball.com/TeamRank/TeamRank.aspx' },
   { type: '선수', category: '타자', url: 'https://www.koreabaseball.com/Record/Player/HitterBasic/Basic1.aspx' },
   { type: '선수', category: '투수', url: 'https://www.koreabaseball.com/Record/Player/PitcherBasic/Basic1.aspx' },
   { type: '팀', category: '타자', url: 'https://www.koreabaseball.com/Record/Team/HitterBasic/Basic1.aspx' }
-  // 성공하시면 파트너님이 찾으신 나머지 URL(수비, 주루 등)도 여기에 추가만 하시면 됩니다!
 ];
 
 async function scrapeRecords() {
@@ -19,63 +18,76 @@ async function scrapeRecords() {
 
   try {
     for (const target of TARGETS) {
-      console.log(`[${target.type} - ${target.category}] 수집 중...`);
-      await page.goto(target.url);
-      await page.waitForTimeout(3000); // 넉넉하게 대기
+      console.log(`📡 [${target.type} - ${target.category}] 접속 중: ${target.url}`);
+      await page.goto(target.url, { waitUntil: 'networkidle' }); // 네트워크가 조용해질 때까지 대기
+      
+      // 표가 나타날 때까지 최대 10초 대기
+      try {
+        await page.waitForSelector('.tbl-type06, .tData', { timeout: 10000 });
+      } catch (e) {
+        console.log(`⚠️ ${target.category} 표를 찾지 못했습니다. 건너뜁니다.`);
+        continue;
+      }
 
       const scrapedData = await page.evaluate(({ type, category }) => {
-        // KBO 데이터 표를 찾습니다
         const table = document.querySelector('.tbl-type06') || document.querySelector('.tData');
         if (!table) return [];
 
-        // 표의 머리글(컬럼명)을 추출합니다 (예: 순위, 팀명, 타율, 홈런 등)
         const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim());
         const rows = Array.from(table.querySelectorAll('tbody tr'));
 
         return rows.map((row, index) => {
           const tds = Array.from(row.querySelectorAll('td'));
-          if (tds.length < headers.length) return null;
+          if (tds.length < 2) return null; // 유효하지 않은 행 제외
 
           let statsObj = {};
           let name = '';
           let teamName = '';
 
-          // 💡 HTML 표의 칸(td)을 아까 찾은 머리글(headers)과 1:1로 매칭합니다.
           headers.forEach((header, i) => {
-            const val = tds[i].innerText.trim();
-            statsObj[header] = val; // 예: {"타율": "0.312"}
-            
-            // 이름과 소속팀 찾기
+            const val = tds[i]?.innerText.trim() || "";
+            statsObj[header] = val;
             if (header === '팀명' || header === '선수명') name = val;
-            if (header === '팀명' && type === '선수') teamName = val; // 선수 기록일 경우
+            if (header === '팀명' && type === '선수') teamName = val;
           });
 
-          // 팀 기록인데 팀명을 못 찾았을 경우 방어 코드
-          if (!name && type === '팀') name = tds[1]?.innerText.trim() || `팀${index}`;
+          if (!name) name = tds[1]?.innerText.trim();
 
           return {
-            id: `${type}-${category}-${name}`,
+            id: `${type}-${category}-${name}-${index}`, // ID 중복 방지
             record_type: type,
             category: category,
             name: name,
-            team_name: type === '선수' ? teamName : name,
-            stats: statsObj // 파싱된 스탯 뭉치 JSON
+            team_name: teamName || name,
+            stats: statsObj
           };
-        }).filter(item => item !== null && item.name !== '');
+        }).filter(item => item !== null && item.name);
       }, target);
 
+      console.log(`✅ ${target.category} 데이터 수집 완료: ${scrapedData.length}건`);
       allData.push(...scrapedData);
     }
 
-    console.log(`총 ${allData.length}건의 데이터를 수집했습니다. DB에 저장합니다...`);
-    // 전체 덮어쓰기 로직
-    await supabase.from('kbo_advanced_stats').delete().neq('id', '0');
-    const { error } = await supabase.from('kbo_advanced_stats').insert(allData);
-    if (error) throw error;
-    console.log('✅ 만능 기록실 DB 업데이트 완료!');
+    if (allData.length > 0) {
+      console.log(`📦 총 ${allData.length}건을 Supabase에 저장합니다...`);
+      
+      // 먼저 기존 데이터를 삭제 (잘 지워지는지 확인)
+      const { error: delError } = await supabase.from('kbo_advanced_stats').delete().neq('id', '0');
+      if (delError) console.error('❌ 삭제 단계 에러:', delError);
+
+      // 데이터 저장
+      const { error: insError } = await supabase.from('kbo_advanced_stats').insert(allData);
+      if (insError) {
+        console.error('❌ 저장 단계 에러:', insError);
+      } else {
+        console.log('🎉 모든 데이터가 성공적으로 저장되었습니다!');
+      }
+    } else {
+      console.log('⚠️ 수집된 데이터가 하나도 없습니다.');
+    }
 
   } catch (err) {
-    console.error('❌ 크롤링 에러:', err);
+    console.error('❌ 치명적 에러 발생:', err);
   } finally {
     await browser.close();
   }
