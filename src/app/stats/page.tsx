@@ -1,75 +1,60 @@
 // src/app/stats/page.tsx
-import { getAdvancedStats } from '@/services/record';
+import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 
-interface Props {
-  searchParams: Promise<{ type?: string; category?: string }>;
-}
+// 서비스 파일을 따로 안 만들었을 경우 직접 호출
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 
-export default async function StatsPage({ searchParams }: Props) {
+export default async function StatsPage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
   const params = await searchParams;
-  const currentType = params.type || '팀'; // '팀' 또는 '선수'
-  const currentCategory = params.category || '순위'; // '순위', '타자', '투수' 등
+  const currentCategory = params.category || '타자';
 
-  // DB에서 데이터 호출
-  const statsData = await getAdvancedStats(currentType, currentCategory);
+  const { data: statsData } = await supabase
+    .from('player_stats')
+    .select('*')
+    .eq('category', currentCategory)
+    .order('rank', { ascending: true });
 
-  // 💡 JSON 데이터에서 표의 머리글(컬럼)들을 자동으로 추출합니다.
-  let tableHeaders: string[] = [];
-  if (statsData.length > 0) {
-    tableHeaders = Object.keys(statsData[0].stats);
-  }
+  const players = statsData || [];
+
+  // 표시할 핵심 지표 정의 (순위, 이름, 팀명 제외)
+  const mainStats = currentCategory === '타자' 
+    ? ['AVG', 'H', 'HR', 'RBI', 'R'] 
+    : ['ERA', 'W', 'L', 'SV', 'SO'];
 
   return (
     <main className="min-h-screen bg-gray-50 max-w-5xl mx-auto p-3 sm:p-6 pb-20">
-      <header className="mb-6 px-1 mt-2">
-        <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">📊 종합 기록실</h1>
+      <header className="mb-6 px-1 mt-2 text-center sm:text-left">
+        <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">🏅 KBO 개인 기록실</h1>
       </header>
 
-      {/* 1차 필터: 팀 vs 선수 */}
-      <div className="flex gap-2 mb-4">
-        {['팀', '선수'].map(type => (
-          <Link key={type} href={`?type=${type}&category=${currentCategory === '순위' && type === '선수' ? '타자' : currentCategory}`}
-            className={`px-6 py-2 rounded-full font-bold text-sm border ${currentType === type ? 'bg-gray-900 text-white' : 'bg-white text-gray-600'}`}>
-            {type} 기록
-          </Link>
-        ))}
+      <div className="flex bg-white rounded-xl shadow-sm p-1.5 mb-6 border border-gray-200 max-w-md mx-auto sm:mx-0">
+        <Link href="?category=타자" className={`flex-1 text-center py-2 text-sm font-bold rounded-lg ${currentCategory === '타자' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>타자</Link>
+        <Link href="?category=투수" className={`flex-1 text-center py-2 text-sm font-bold rounded-lg ${currentCategory === '투수' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>투수</Link>
       </div>
 
-      {/* 2차 필터: 세부 카테고리 */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-        {(currentType === '팀' ? ['순위', '타자', '투수'] : ['타자', '투수']).map(cat => (
-          <Link key={cat} href={`?type=${currentType}&category=${cat}`}
-            className={`shrink-0 px-4 py-1.5 rounded-md font-bold text-sm ${currentCategory === cat ? 'bg-red-600 text-white' : 'bg-white text-gray-600 border'}`}>
-            {cat}
-          </Link>
-        ))}
-      </div>
-
-      {/* 동적 데이터 표 렌더링 */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto scrollbar-hide">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
           <table className="w-full text-center text-sm whitespace-nowrap">
-            <thead className="bg-gray-100 text-gray-700 font-bold border-b border-gray-200">
+            <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-200">
               <tr>
-                <th className="py-3 px-4">이름</th>
-                {tableHeaders.map(header => (
-                  <th key={header} className="py-3 px-3">{header}</th>
-                ))}
+                <th className="py-4 px-4">순위</th>
+                <th className="py-4 px-4 text-left">선수명</th>
+                <th className="py-4 px-4 text-left">팀명</th>
+                {mainStats.map(s => <th key={s} className="py-4 px-3 text-gray-900">{s}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {statsData.length > 0 ? statsData.map((row) => (
-                <tr key={row.id} className={`hover:bg-gray-50 ${row.name.includes('SSG') || row.team_name?.includes('SSG') ? 'bg-red-50 font-bold text-gray-900' : 'text-gray-700'}`}>
-                  <td className="py-3 px-4 font-black">{row.name}</td>
-                  {/* JSON 데이터를 순회하며 칸을 채웁니다 */}
-                  {tableHeaders.map(header => (
-                     <td key={header} className="py-3 px-3">{row.stats[header]}</td>
+              {players.map((p) => (
+                <tr key={p.id} className={`hover:bg-gray-50 ${p.team_name.includes('SSG') ? 'bg-red-50/50' : ''}`}>
+                  <td className="py-4 px-4 text-gray-400">{p.rank}</td>
+                  <td className="py-4 px-4 text-left font-black text-gray-900">{p.player_name}</td>
+                  <td className="py-4 px-4 text-left font-bold text-gray-500">{p.team_name}</td>
+                  {mainStats.map(s => (
+                    <td key={s} className="py-4 px-3 font-semibold text-gray-700">{p.stats[s] || '-'}</td>
                   ))}
                 </tr>
-              )) : (
-                <tr><td colSpan={10} className="py-10 text-gray-400">데이터가 없습니다.</td></tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>

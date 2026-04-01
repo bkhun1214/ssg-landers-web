@@ -1,96 +1,96 @@
-// scripts/record-scraper.mjs (디버깅 강화 버전)
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-const TARGETS = [
-  { type: '팀', category: '순위', url: 'https://www.koreabaseball.com/TeamRank/TeamRank.aspx' },
-  { type: '선수', category: '타자', url: 'https://www.koreabaseball.com/Record/Player/HitterBasic/Basic1.aspx' },
-  { type: '선수', category: '투수', url: 'https://www.koreabaseball.com/Record/Player/PitcherBasic/Basic1.aspx' },
-  { type: '팀', category: '타자', url: 'https://www.koreabaseball.com/Record/Team/HitterBasic/Basic1.aspx' }
-];
-
-async function scrapeRecords() {
-  const browser = await chromium.launch({ headless: true });
+async function scrapePlayerStats() {
+  const browser = await chromium.launch({ 
+    headless: true, 
+    args: ['--disable-blink-features=AutomationControlled'] 
+  });
   const page = await browser.newPage();
   let allData = [];
 
   try {
-    for (const target of TARGETS) {
-      console.log(`📡 [${target.type} - ${target.category}] 접속 중: ${target.url}`);
-      await page.goto(target.url, { waitUntil: 'networkidle' }); // 네트워크가 조용해질 때까지 대기
-      
-      // 표가 나타날 때까지 최대 10초 대기
-      try {
-        await page.waitForSelector('.tbl-type06, .tData', { timeout: 10000 });
-      } catch (e) {
-        console.log(`⚠️ ${target.category} 표를 찾지 못했습니다. 건너뜁니다.`);
-        continue;
-      }
+    const TARGETS = [
+      { category: '타자', url: 'https://www.koreabaseball.com/Record/Player/HitterBasic/Basic1.aspx' },
+      { category: '투수', url: 'https://www.koreabaseball.com/Record/Player/PitcherBasic/Basic1.aspx' }
+    ];
 
-      const scrapedData = await page.evaluate(({ type, category }) => {
-        const table = document.querySelector('.tbl-type06') || document.querySelector('.tData');
+    for (const target of TARGETS) {
+      console.log(`📡 [${target.category}] 접속 및 데이터 패킷 감시 중...`);
+      
+      // 💡 1. 페이지 접속
+      await page.goto(target.url, { waitUntil: 'domcontentloaded' });
+
+      // 💡 2. 강제로 5초간 대기하며 표가 그려지길 기다림
+      // (KBO 사이트는 내부적으로 __doPostBack 같은 함수를 호출하여 데이터를 비동기로 채움)
+      await page.waitForTimeout(5000);
+
+      // 💡 3. DOM에 직접 접근하여 데이터 추출 (강력한 셀렉터 사용)
+      const scrapedData = await page.evaluate((category) => {
+        // KBO 기록실의 표는 보통 id가 포함된 div 안에 들어있음
+        const table = document.querySelector('.tbl-type06 table') || document.querySelector('table');
         if (!table) return [];
 
-        const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim());
         const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim());
 
-        return rows.map((row, index) => {
+        return rows.map((row) => {
           const tds = Array.from(row.querySelectorAll('td'));
-          if (tds.length < 2) return null; // 유효하지 않은 행 제외
+          if (tds.length < 5 || row.innerText.includes('데이터가 없습니다')) return null;
 
           let statsObj = {};
-          let name = '';
+          let playerName = '';
           let teamName = '';
+          let rank = 0;
 
           headers.forEach((header, i) => {
             const val = tds[i]?.innerText.trim() || "";
+            if (header === '순위') rank = parseInt(val) || 0;
+            // 💡 이름 칸에 <a> 태그가 있으면 그 안의 텍스트를 정확히 가져옴
+            if (header === '선수명') {
+                const aTag = tds[i].querySelector('a');
+                playerName = aTag ? aTag.innerText.trim() : val;
+            }
+            if (header === '팀명') teamName = val;
             statsObj[header] = val;
-            if (header === '팀명' || header === '선수명') name = val;
-            if (header === '팀명' && type === '선수') teamName = val;
           });
 
-          if (!name) name = tds[1]?.innerText.trim();
+          if (!playerName) return null;
 
           return {
-            id: `${type}-${category}-${name}-${index}`, // ID 중복 방지
-            record_type: type,
+            id: `${category}-${playerName}-${teamName}`,
+            player_name: playerName,
+            team_name: teamName,
             category: category,
-            name: name,
-            team_name: teamName || name,
+            rank: rank,
             stats: statsObj
           };
-        }).filter(item => item !== null && item.name);
-      }, target);
+        }).filter(item => item !== null);
+      }, target.category);
 
-      console.log(`✅ ${target.category} 데이터 수집 완료: ${scrapedData.length}건`);
+      console.log(`📊 [${target.category}] 추출 성공: ${scrapedData.length}건`);
       allData.push(...scrapedData);
     }
 
     if (allData.length > 0) {
-      console.log(`📦 총 ${allData.length}건을 Supabase에 저장합니다...`);
-      
-      // 먼저 기존 데이터를 삭제 (잘 지워지는지 확인)
-      const { error: delError } = await supabase.from('kbo_advanced_stats').delete().neq('id', '0');
-      if (delError) console.error('❌ 삭제 단계 에러:', delError);
-
-      // 데이터 저장
-      const { error: insError } = await supabase.from('kbo_advanced_stats').insert(allData);
-      if (insError) {
-        console.error('❌ 저장 단계 에러:', insError);
-      } else {
-        console.log('🎉 모든 데이터가 성공적으로 저장되었습니다!');
-      }
+      const { error } = await supabase.from('player_stats').upsert(allData, { onConflict: 'id' });
+      if (error) throw error;
+      console.log('🎉 모든 선수 기록이 Supabase에 저장되었습니다!');
     } else {
-      console.log('⚠️ 수집된 데이터가 하나도 없습니다.');
+      console.log('⚠️ 수집된 데이터가 없습니다. 셀렉터를 다시 점검해야 합니다.');
     }
 
   } catch (err) {
-    console.error('❌ 치명적 에러 발생:', err);
+    console.error('❌ 에러:', err);
   } finally {
+    await page.waitForTimeout(2000);
     await browser.close();
   }
 }
 
-scrapeRecords();
+scrapePlayerStats();
