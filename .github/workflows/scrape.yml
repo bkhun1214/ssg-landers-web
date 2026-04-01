@@ -1,11 +1,12 @@
 name: KBO Data Auto Update
 
-# 봇이 언제 실행될지 설정합니다
 on:
   schedule:
-    # 매일 한국 시간 기준 0시, 18시, 22시에 실행 (UTC 기준 15, 9, 13시)
-    - cron: '0 15,9,13 * * *' 
-  # 수동으로 원할 때 버튼을 눌러서 실행할 수 있게 해줍니다
+    # 한국 시간(KST) 기준 스케줄을 UTC로 변환한 결과입니다.
+    # 1. 오전 10시 (UTC 01:00) : 오늘 경기 정보 최종 확인
+    # 2. 오후 6시 ~ 11시 (UTC 09:00 ~ 14:00) : 매시간 실시간 점수 업데이트
+    # 3. 오전 0시 (UTC 15:00) : 최종 결과 및 순위 마감
+    - cron: '0 1,9,10,11,12,13,14,15 * * *'
   workflow_dispatch: 
 
 jobs:
@@ -13,21 +14,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📂 코드 가져오기
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: ⚙️ Node.js 세팅
-        uses: actions/setup-node@v3
+      - name: ⚙️ Node.js 세팅 (버전 20 사용)
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      - name: 📦 라이브러리 설치
+      - name: 📦 크롤러 전용 라이브러리만 핀셋 설치
         run: |
-          npm install
+          npm install @supabase/supabase-js playwright --no-save
           npx playwright install --with-deps chromium
 
       - name: 🚀 크롤러 실행!
         env:
-          # 여기서 아까 만든 금고(Secrets)의 열쇠를 스크립트에 건네줍니다
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: node scripts/scraper.mjs
