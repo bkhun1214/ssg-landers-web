@@ -1,0 +1,44 @@
+name: KBO Data Auto Update
+
+on:
+  schedule:
+    # 매일 한국 시간 자정(00:00)에 실행 (UTC 15:00)
+    # 0 15 * * * -> 매일 실행하되 스크립트 내에서 월요일 체크 가능
+    - cron: '0 15 * * *'
+  workflow_dispatch: # 수동 실행 버튼
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright
+        run: npx playwright install chromium
+
+      # 1. 일정 및 경기 결과 업데이트 (기존 스크립트)
+      - name: Run Scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: node scripts/scraper.mjs
+
+      # 2. 팀/개인 기록 업데이트 (월요일 제외 실행)
+      - name: Run Record Scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # 현재 요일 확인 (1=월, 2=화 ... 7=일)
+          DAY=$(date +%u)
+          if [ "$DAY" -ne 1 ]; then
+            node scripts/record-scraper.mjs
+          else
+            echo "오늘은 월요일이라 기록 업데이트를 건너뜁니다."
+          fi
