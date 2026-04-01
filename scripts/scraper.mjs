@@ -43,7 +43,7 @@ async function scrapeKbo() {
         if (!playCell || !currentDate) return null;
 
         // 팀 이름 및 점수 파싱
-        const teams = Array.from(playCell.querySelectorAll('span')).map(s => s.innerText.trim());
+        const teams = Array.from(playCell.querySelectorAll('span')).map(s => s.innerText.trim()).filter(t => t !== 'vs' && t !== '');
         const scoreText = playCell.querySelector('em')?.innerText.trim() || "";
         
         let awayScore = null;
@@ -66,7 +66,7 @@ async function scrapeKbo() {
         else if (scoreText.includes(':')) status = 'PROGRESS';
 
         const awayTeam = teams[0];
-        const homeTeam = teams[1] || teams[2];
+        const homeTeam = teams[1];
 
         return {
           id: `${currentDate}-${homeTeam}-${awayTeam}`,
