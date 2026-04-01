@@ -21,6 +21,7 @@ export async function getMonthlySchedule(year: number, month: number): Promise<G
       .select('*')
       .gte('date', startDate)
       .lt('date', endDate)
+      .eq('is_ssg_landers', true)
       .order('date', { ascending: true })
       .order('time', { ascending: true });
 
