@@ -81,7 +81,9 @@ export default function GameCard({ game, selectedTeam = '전체', isSchedulePage
             <div className="text-xs sm:text-lg font-bold text-gray-300 italic">vs</div>
           )}
           <div className="text-[8px] sm:text-[11px] mt-1 font-semibold text-gray-400 whitespace-nowrap">
-            {game.status === 'FINISHED' ? '경기종료' : game.status === 'CANCELLED' ? '취소' : '예정'}
+            {game.status === 'FINISHED' ? '경기종료' : 
+             game.status === 'PROGRESS' ? '경기중' :
+             game.status === 'CANCELLED' ? '취소' : '예정'}
           </div>
         </div>
 
