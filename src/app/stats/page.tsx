@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 
 // 서비스 파일을 따로 안 만들었을 경우 직접 호출
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);
 
 export default async function StatsPage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
   const params = await searchParams;
