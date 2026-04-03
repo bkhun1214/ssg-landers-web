@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getMonthlySchedule } from '@/services/schedule';
 
 // 24시간(86400초) 주기로 백그라운드 캐시 재검증 (ISR)
-export const revalidate = 0;
+export const revalidate = 86400;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
