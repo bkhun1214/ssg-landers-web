@@ -39,7 +39,9 @@ async function scrapeBoxScores() {
       .from('schedules')
       .select('*')
       .eq('status', 'FINISHED')
-      .eq('date', targetDate);
+      .gte('date', '2026-03-01') // 💡 3월 1일 이후
+      .lte('date', '2026-04-02') // 💡 3월 31일 이전
+      .order('date', { ascending: true }); // 날짜순으로 정렬해서 수집
 
     if (!finishedGames || finishedGames.length === 0) {
       console.log(`💤 ${targetDate}에 종료된 경기가 없습니다.`);
@@ -47,7 +49,7 @@ async function scrapeBoxScores() {
     }
 
     for (const game of finishedGames) {
-      console.log(`🔍 [${game.id}] 타순/포지션/이름 정밀 수집 시작...`);
+      console.log(`🔍 [${game.id}] 3단 분리 스코어보드 병합 수집 시작...`);
 
       const dateStr = game.date.replace(/-/g, '');
       const awayCode = TEAM_CODES[game.away_team];
@@ -57,40 +59,69 @@ async function scrapeBoxScores() {
       await page.goto(url, { waitUntil: 'networkidle' });
       await page.waitForTimeout(4000); 
 
+      let scoreboardObj = null;
       let targetFrame = page;
-      for (const frame of page.frames()) {
+
+      // 💡 파트너님이 찾아주신 HTML 구조(record-etc, data1, data2, data3) 그대로 추출!
+      for (const frame of [page, ...page.frames()]) {
         const content = await frame.content();
+        
         if (content.includes('타수') && content.includes('이닝')) {
           targetFrame = frame;
-          break;
+        }
+
+        const extractedScoreboard = await frame.evaluate(() => {
+          const matchInfoSpans = document.querySelectorAll('.record-etc span');
+          const data1Rows = document.querySelectorAll('#tblScordboard1 tbody tr');
+          const data2Headers = document.querySelectorAll('#tblScordboard2 thead th');
+          const data2Rows = document.querySelectorAll('#tblScordboard2 tbody tr');
+          const data3Rows = document.querySelectorAll('#tblScordboard3 tbody tr');
+
+          if (data1Rows.length >= 2 && data2Rows.length >= 2 && data3Rows.length >= 2) {
+            // 경기 정보 (구장, 관중, 시간 등)
+            const matchInfo = Array.from(matchInfoSpans).map(span => span.textContent.trim()).filter(Boolean).join(' | ');
+
+            // 이닝 헤더 (1, 2, 3 ... 12)
+            const inningHeaders = Array.from(data2Headers).map(th => th.textContent.trim());
+
+            // 원정(AWAY) 데이터
+            const awayResult = data1Rows[0].querySelector('td')?.textContent.trim() || '';
+            const awayInnings = Array.from(data2Rows[0].querySelectorAll('td')).map(td => td.textContent.trim());
+            const awayRHEB = Array.from(data3Rows[0].querySelectorAll('td')).map(td => td.textContent.trim());
+
+            // 홈(HOME) 데이터
+            const homeResult = data1Rows[1].querySelector('td')?.textContent.trim() || '';
+            const homeInnings = Array.from(data2Rows[1].querySelectorAll('td')).map(td => td.textContent.trim());
+            const homeRHEB = Array.from(data3Rows[1].querySelectorAll('td')).map(td => td.textContent.trim());
+
+            return {
+              matchInfo,
+              inningHeaders,
+              away: { result: awayResult, innings: awayInnings, R: awayRHEB[0], H: awayRHEB[1], E: awayRHEB[2], B: awayRHEB[3] },
+              home: { result: homeResult, innings: homeInnings, R: homeRHEB[0], H: homeRHEB[1], E: homeRHEB[2], B: homeRHEB[3] }
+            };
+          }
+          return null;
+        });
+
+        if (extractedScoreboard) {
+          scoreboardObj = extractedScoreboard;
         }
       }
 
-      const boxData = await targetFrame.evaluate(({ game }) => {
+      const boxData = await targetFrame.evaluate(({ game, scoreboardObj }) => {
         const allTables = Array.from(document.querySelectorAll('table'));
-        
         const nameTables = allTables.filter(t => t.textContent.includes('타자') || t.textContent.includes('선수명'));
         const statTables = allTables.filter(t => t.textContent.includes('타수') && t.textContent.includes('안타'));
         const pitcherTables = allTables.filter(t => t.textContent.includes('이닝') && t.textContent.includes('실점'));
-        
-        let inningScores = [];
-        const inningTables = allTables.filter(t => t.textContent.includes('R') && t.textContent.includes('H'));
-        if (inningTables.length > 0) {
-           inningScores = Array.from(inningTables[0].querySelectorAll('tbody tr')).map(row => 
-             Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim())
-           );
-        }
 
         const getBatters = (teamIndex) => {
           let batters = [];
-          const nameTable = nameTables[teamIndex];
-          const statTable = statTables[teamIndex];
-
-          if (nameTable && statTable) {
-            const nameRows = Array.from(nameTable.querySelectorAll('tbody tr'));
-            const statRows = Array.from(statTable.querySelectorAll('tbody tr'));
-
-            const statHeaders = Array.from(statTable.querySelectorAll('th, thead td')).map(h => h.textContent.trim());
+          if (nameTables[teamIndex] && statTables[teamIndex]) {
+            const nameRows = Array.from(nameTables[teamIndex].querySelectorAll('tbody tr'));
+            const statRows = Array.from(statTables[teamIndex].querySelectorAll('tbody tr'));
+            const statHeaders = Array.from(statTables[teamIndex].querySelectorAll('th, thead td')).map(h => h.textContent.trim());
+            
             let abIdx = statHeaders.indexOf('타수'); if (abIdx === -1) abIdx = 0; 
             let hitIdx = statHeaders.indexOf('안타'); if (hitIdx === -1) hitIdx = 2;
             let rbiIdx = statHeaders.indexOf('타점'); if (rbiIdx === -1) rbiIdx = 3;
@@ -101,41 +132,23 @@ async function scrapeBoxScores() {
 
               const ths = Array.from(nameRow.querySelectorAll('th'));
               const tds = Array.from(nameRow.querySelectorAll('td'));
-
-              let orderText = '';
-              let posText = '-';
-              let nameText = '';
+              let orderText = '', posText = '-', nameText = '';
 
               if (ths.length >= 2 && tds.length >= 1) {
-                orderText = ths[0].textContent.trim(); // 💡 1번 타자
-                posText = ths[1].textContent.trim();   // 💡 중견수
-                nameText = tds[0].textContent.trim();  // 💡 김호령
+                orderText = ths[0].textContent.trim(); posText = ths[1].textContent.trim(); nameText = tds[0].textContent.trim();  
               } else if (tds.length >= 3) {
-                orderText = tds[0].textContent.trim();
-                posText = tds[1].textContent.trim();
-                nameText = tds[2].textContent.trim();
+                orderText = tds[0].textContent.trim(); posText = tds[1].textContent.trim(); nameText = tds[2].textContent.trim();
               } else if (tds.length > 0) {
                 nameText = tds[0].textContent.trim();
               }
 
               if (nameText && !nameText.includes('합계') && !nameText.includes('총계')) {
                 let cleanName = nameText.replace(/[0-9]/g, '').replace(/\(.*?\)/g, '').trim();
-                
                 let isStarter = !nameRow.className.includes('sub');
-                if (orderText !== '') {
-                   isStarter = !isNaN(Number(orderText));
-                }
-
+                if (orderText !== '') isStarter = !isNaN(Number(orderText));
                 const statCells = Array.from(statRow.querySelectorAll('td, th')).map(c => c.textContent.trim());
-                
                 if (cleanName.length > 0 && statCells.length > Math.max(abIdx, hitIdx, rbiIdx)) {
-                  batters.push({
-                    order: orderText, // 💡 여기에 값을 넣는 걸 빼먹었었네요!
-                    pos: posText || '-', 
-                    name: cleanName,
-                    is_starter: isStarter,
-                    stats: `${statCells[abIdx]}타수 ${statCells[hitIdx]}안타 ${statCells[rbiIdx]}타점`
-                  });
+                  batters.push({ order: orderText, pos: posText || '-', name: cleanName, is_starter: isStarter, stats: `${statCells[abIdx]}타수 ${statCells[hitIdx]}안타 ${statCells[rbiIdx]}타점` });
                 }
               }
             });
@@ -146,10 +159,8 @@ async function scrapeBoxScores() {
         const getPitchers = (teamIndex) => {
           let pitchers = [];
           if (pitcherTables[teamIndex]) {
-            const table = pitcherTables[teamIndex];
-            const rows = Array.from(table.querySelectorAll('tbody tr'));
-            
-            const headers = Array.from(table.querySelectorAll('th, thead td')).map(h => h.textContent.trim());
+            const rows = Array.from(pitcherTables[teamIndex].querySelectorAll('tbody tr'));
+            const headers = Array.from(pitcherTables[teamIndex].querySelectorAll('th, thead td')).map(h => h.textContent.trim());
             let nameIdx = headers.findIndex(h => h.includes('투수') || h.includes('선수명')); if (nameIdx === -1) nameIdx = 0;
             let innIdx = headers.indexOf('이닝'); if (innIdx === -1) innIdx = 1;
             let runIdx = headers.indexOf('실점'); if (runIdx === -1) runIdx = 13;
@@ -157,25 +168,18 @@ async function scrapeBoxScores() {
 
             rows.forEach((row, idx) => {
               const cells = Array.from(row.querySelectorAll('td, th')).map(c => c.textContent.trim());
-              
               if (cells.length > Math.max(innIdx, runIdx) && cells[nameIdx]) {
                 const rawName = cells[nameIdx];
                 if (!rawName.includes('합계') && !rawName.includes('총계')) {
                   let role = idx === 0 ? '선발' : '계투';
                   const res = resIdx !== -1 ? cells[resIdx] : rawName;
-                  
                   if (res.includes('승')) role = '승리';
                   else if (res.includes('패')) role = '패전';
                   else if (res.includes('세')) role = '세이브';
                   else if (res.includes('홀')) role = '홀드';
-
                   const cleanName = rawName.replace(/\(.*?\)/g, '').replace(/[0-9]/g, '').trim();
                   if (cleanName.length > 0) {
-                    pitchers.push({
-                      name: cleanName,
-                      role: role,
-                      stats: `${cells[innIdx]}이닝 ${cells[runIdx]}실점`
-                    });
+                    pitchers.push({ name: cleanName, role: role, stats: `${cells[innIdx]}이닝 ${cells[runIdx]}실점` });
                   }
                 }
               }
@@ -192,13 +196,13 @@ async function scrapeBoxScores() {
           home_batters: getBatters(1),
           away_pitchers: getPitchers(0),
           home_pitchers: getPitchers(1),
-          inning_scores: inningScores
+          inning_scores: scoreboardObj // 💡 배열이 아닌 구조화된 JSON 객체로 통째로 저장!
         };
-      }, { game });
+      }, { game, scoreboardObj });
 
       const { error } = await supabase.from('box_scores').upsert(boxData);
       if (error) console.error(`❌ [${game.id}] 저장 실패:`, error);
-      else console.log(`✅ [${game.id}] 타순(order) 포함 저장 완료!`);
+      else console.log(`✅ [${game.id}] 경기정보+승패+RHEB+기록 저장 완료!`);
     }
 
   } catch (err) {

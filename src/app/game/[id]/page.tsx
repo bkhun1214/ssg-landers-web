@@ -28,10 +28,14 @@ export default async function GameDetailPage({ params }: Props) {
     );
   }
 
-  const { home_team, away_team, home_batters, away_batters, home_pitchers, away_pitchers } = boxScore;
+  const { home_team, away_team, home_batters, away_batters, home_pitchers, away_pitchers, inning_scores } = boxScore;
 
   const homeStartingPitcher = home_pitchers?.length > 0 ? home_pitchers[0].name : '미등록';
   const awayStartingPitcher = away_pitchers?.length > 0 ? away_pitchers[0].name : '미등록';
+
+  // 💡 JSON 구조로 들어온 스코어보드 데이터
+  const scoreboard = inning_scores; 
+  const hasScoreboard = scoreboard && scoreboard.away && scoreboard.home;
 
   return (
     <main className="max-w-4xl mx-auto p-4 sm:p-6 pb-20 bg-gray-50 min-h-screen">
@@ -41,11 +45,76 @@ export default async function GameDetailPage({ params }: Props) {
          </Link>
       </header>
 
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <h1 className="text-2xl font-black text-gray-900 tracking-tight">경기 상세 기록</h1>
         <p className="text-gray-500 text-sm mt-1">{gameId.replace(/-/g, ' ')}</p>
       </div>
 
+      {/* 💡 1. 경기 기본 정보 (구장, 관중, 시간) */}
+      {hasScoreboard && scoreboard.matchInfo && (
+        <div className="mb-6 text-center text-[11px] sm:text-xs font-bold text-gray-500 bg-white p-3 rounded-xl shadow-sm border border-gray-200">
+          {scoreboard.matchInfo}
+        </div>
+      )}
+
+      {/* ⚾ 2. 분리된 표를 합친 완벽한 이닝 스코어보드 */}
+      {hasScoreboard && (
+        <section className="mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-center text-sm whitespace-nowrap min-w-max">
+              <thead className="bg-gray-800 text-white font-bold">
+                <tr>
+                  <th className="py-3 px-4 text-left sticky left-0 bg-gray-800 z-10 border-r border-gray-700">팀</th>
+                  <th className="py-3 px-3 border-r border-gray-700 text-gray-300">결과</th>
+                  {scoreboard.inningHeaders.map((inning: string) => (
+                    <th key={`header-${inning}`} className="py-3 px-3.5 text-gray-300">{inning}</th>
+                  ))}
+                  <th className="py-3 px-4 text-red-400 border-l border-gray-700 font-black">R</th>
+                  <th className="py-3 px-3 text-gray-300">H</th>
+                  <th className="py-3 px-3 text-gray-300">E</th>
+                  <th className="py-3 px-3 text-gray-300">B</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 font-medium">
+                {/* AWAY 라인 */}
+                <tr className="hover:bg-gray-50">
+                  <td className="py-3 px-4 text-left font-black text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-100">{away_team}</td>
+                  <td className={`py-3 px-3 border-r border-gray-100 font-extrabold ${scoreboard.away.result === '승' ? 'text-blue-600' : scoreboard.away.result === '패' ? 'text-red-600' : 'text-gray-500'}`}>
+                    {scoreboard.away.result || '-'}
+                  </td>
+                  {scoreboard.away.innings.map((score: string, i: number) => (
+                    <td key={`away-inning-${i}`} className={`py-3 px-3.5 ${score === '0' || score === '-' ? 'text-gray-400' : 'text-gray-800 font-bold'}`}>
+                      {score || '-'}
+                    </td>
+                  ))}
+                  <td className="py-3 px-4 font-black text-red-600 border-l border-gray-100 bg-red-50/30 text-base">{scoreboard.away.R}</td>
+                  <td className="py-3 px-3 text-gray-700 font-bold">{scoreboard.away.H}</td>
+                  <td className="py-3 px-3 text-gray-700">{scoreboard.away.E}</td>
+                  <td className="py-3 px-3 text-gray-700">{scoreboard.away.B}</td>
+                </tr>
+                {/* HOME 라인 */}
+                <tr className="hover:bg-gray-50">
+                  <td className="py-3 px-4 text-left font-black text-[#CE0E2D] sticky left-0 bg-white z-10 border-r border-gray-100">{home_team}</td>
+                  <td className={`py-3 px-3 border-r border-gray-100 font-extrabold ${scoreboard.home.result === '승' ? 'text-blue-600' : scoreboard.home.result === '패' ? 'text-red-600' : 'text-gray-500'}`}>
+                    {scoreboard.home.result || '-'}
+                  </td>
+                  {scoreboard.home.innings.map((score: string, i: number) => (
+                    <td key={`home-inning-${i}`} className={`py-3 px-3.5 ${score === '0' || score === '-' ? 'text-gray-400' : 'text-gray-800 font-bold'}`}>
+                      {score || '-'}
+                    </td>
+                  ))}
+                  <td className="py-3 px-4 font-black text-red-600 border-l border-gray-100 bg-red-50/30 text-base">{scoreboard.home.R}</td>
+                  <td className="py-3 px-3 text-gray-700 font-bold">{scoreboard.home.H}</td>
+                  <td className="py-3 px-3 text-gray-700">{scoreboard.home.E}</td>
+                  <td className="py-3 px-3 text-gray-700">{scoreboard.home.B}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* 이하 기존 타자/투수 기록 표 유지 */}
       <section className="grid grid-cols-2 gap-4 mb-8">
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 text-center flex flex-col justify-center">
           <span className="text-[10px] font-extrabold text-gray-400 mb-1 tracking-wider">AWAY 선발</span>
@@ -57,9 +126,7 @@ export default async function GameDetailPage({ params }: Props) {
         </div>
       </section>
 
-      {/* ⚾ 1단: 타자 구역 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* AWAY 타자 */}
           <div className="space-y-4">
               <div className="bg-gray-800 text-white p-3 rounded-xl text-center font-black text-lg shadow-md">
                   {away_team} 타자 기록
@@ -68,18 +135,14 @@ export default async function GameDetailPage({ params }: Props) {
                   {away_batters?.map((b: any, i: number) => (
                       <div key={i} className={`flex justify-between items-center p-3 border-b border-gray-50 last:border-0 ${b.is_starter ? 'bg-white' : 'bg-gray-50 text-gray-500 text-sm'}`}>
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                              {/* 타순 */}
                               <span className={`w-5 shrink-0 text-center font-black ${b.is_starter ? 'text-gray-900 text-sm' : 'text-gray-400 text-xs'}`}>
                                 {b.order || '-'}
                               </span>
-                              {/* 포지션 뱃지 */}
                               {b.pos && b.pos !== '-' && <span className="shrink-0 text-[9px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded font-bold">{b.pos}</span>}
-                              {/* 💡 이름: truncate 제거, whitespace-nowrap 적용하여 긴 이름 보호 */}
                               <span className="font-bold text-gray-900 whitespace-nowrap overflow-visible">
                                 {b.name}
                               </span>
                           </div>
-                          {/* 💡 기록: shrink-0으로 이름이 길어져도 밀리지 않게 고정 */}
                           <span className="text-sm font-medium tracking-tight text-gray-600 shrink-0 ml-2">
                             {b.stats}
                           </span>
@@ -88,7 +151,6 @@ export default async function GameDetailPage({ params }: Props) {
               </div>
           </div>
 
-          {/* HOME 타자 */}
           <div className="space-y-4">
               <div className="bg-[#CE0E2D] text-white p-3 rounded-xl text-center font-black text-lg shadow-md">
                   {home_team} 타자 기록
@@ -114,9 +176,7 @@ export default async function GameDetailPage({ params }: Props) {
           </div>
       </div>
 
-      {/* ⚾ 2단: 투수 구역 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* AWAY 투수 */}
           <div className="space-y-4">
               <div className="bg-gray-800 text-white p-3 rounded-xl text-center font-black text-lg shadow-md">
                   {away_team} 투수 기록
@@ -136,7 +196,6 @@ export default async function GameDetailPage({ params }: Props) {
               </div>
           </div>
 
-          {/* HOME 투수 */}
           <div className="space-y-4">
               <div className="bg-[#CE0E2D] text-white p-3 rounded-xl text-center font-black text-lg shadow-md">
                   {home_team} 투수 기록
