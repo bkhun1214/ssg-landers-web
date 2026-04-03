@@ -1,6 +1,7 @@
 // src/app/page.tsx
 import { getMonthlySchedule } from '@/services/schedule';
 import GameCard from '@/components/GameCard';
+import AutoScroller from '@/components/AutoScroller';
 import Link from 'next/link';
 
 interface Props {
@@ -9,8 +10,14 @@ interface Props {
 
 export default async function Home({ searchParams }: Props) {
   const params = await searchParams;
-  const currentYear = parseInt(params.year || '2026');
-  const currentMonth = parseInt(params.month || '4');
+  
+  // 한국 시간(KST) 기준으로 '오늘 날짜' 구하기
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const todayStr = kstNow.toISOString().split('T')[0]; // "2026-04-03" 형태
+
+  const currentYear = parseInt(params.year || String(kstNow.getFullYear()));
+  const currentMonth = parseInt(params.month || String(kstNow.getMonth() + 1));
 
   // 💡 메인 화면은 무조건 'SSG' 데이터만 가져옵니다!
   const schedules = await getMonthlySchedule(currentYear, currentMonth, 'SSG');
@@ -20,9 +27,35 @@ export default async function Home({ searchParams }: Props) {
   const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1;
   const nextYear = currentMonth === 12 ? currentYear + 1 : currentYear;
 
+  // 🎯 어디로 스크롤할지 목표 경기(Target Game) 찾기
+  let targetGameId: string | null = null;
+  
+  if (schedules.length > 0) {
+    // 1순위: 오늘 경기가 있으면 오늘 경기로
+    let target = schedules.find(g => g.date === todayStr);
+
+    // 2순위: 오늘 경기가 없다면, 이미 지나간 가장 최근 경기로 (배열이 날짜순 정렬이므로 필터링 후 마지막 요소)
+    if (!target) {
+      const pastGames = schedules.filter(g => g.date < todayStr);
+      if (pastGames.length > 0) target = pastGames[pastGames.length - 1];
+    }
+
+    // 3순위: 과거 경기도 없다면, 앞으로 다가올 가장 가까운 첫 경기로
+    if (!target) {
+      target = schedules.find(g => g.date > todayStr);
+    }
+
+    if (target) {
+      targetGameId = `game-${target.id}`; // 예: "game-2026-04-03-SSG-KT"
+    }
+  }
+
   return (
-    <main className="min-h-screen bg-gray-50 max-w-3xl mx-auto p-3 sm:p-6 pb-10">
+    <main className="min-h-screen bg-gray-50 max-w-3xl mx-auto p-3 sm:p-6 pb-10 relative">
       
+      {/* 💡 목표 위치로 부드럽게 스크롤을 쏴주는 투명 컴포넌트 삽입 */}
+      <AutoScroller targetId={targetGameId} />
+
       <header className="mb-6 flex items-center justify-between px-1">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
@@ -42,8 +75,10 @@ export default async function Home({ searchParams }: Props) {
       <div className="space-y-3">
         {schedules.length > 0 ? (
           schedules.map((game) => (
-            // 카드를 그릴 때 기준을 무조건 'SSG'로 고정합니다.
-            <GameCard key={game.id} game={game} selectedTeam="SSG" />
+            // 💡 여기에 id를 달아주어 AutoScroller가 찾아올 수 있게 합니다!
+            <div id={`game-${game.id}`} key={game.id} className="scroll-mt-4">
+              <GameCard game={game} selectedTeam="SSG" />
+            </div>
           ))
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
