@@ -1,10 +1,8 @@
 // src/app/game/[id]/page.tsx
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);
 
 interface Props {
   params: Promise<{ id: string }>;
