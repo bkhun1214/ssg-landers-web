@@ -39,9 +39,7 @@ async function scrapeBoxScores() {
       .from('schedules')
       .select('*')
       .eq('status', 'FINISHED')
-      .gte('date', '2026-03-01') // 💡 3월 1일 이후
-      .lte('date', '2026-04-02') // 💡 3월 31일 이전
-      .order('date', { ascending: true }); // 날짜순으로 정렬해서 수집
+      .eq('date', targetDate);
 
     if (!finishedGames || finishedGames.length === 0) {
       console.log(`💤 ${targetDate}에 종료된 경기가 없습니다.`);
