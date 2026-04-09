@@ -1,30 +1,37 @@
-# ⚾ SSG 랜더스 일정 및 기록 플랫폼 (KBO Stats Tracker)
+# ⚾ SSG 랜더스 & KBO 일정/기록 플랫폼 (KBO Stats Tracker)
 
 🌐 **Live Demo (배포 주소):** [https://ssg-landers-web.vercel.app/](https://ssg-landers-web.vercel.app/)
 
-KBO 프로야구 SSG 랜더스의 월별 경기 일정, 상세 박스스코어, 그리고 선수 개인 기록을 한눈에 확인할 수 있는 풀스택 웹 애플리케이션입니다. 
+KBO 프로야구 SSG 랜더스의 팬들을 위한 전용 메인 화면부터, KBO 전체 10개 구단의 경기 일정, 상세 박스스코어, 그리고 선수 개인 기록까지 한눈에 확인할 수 있는 풀스택 웹 애플리케이션입니다. 
 
-실제 KBO 공식 홈페이지의 복잡한 구조(투명 IFRAME 등)를 뚫고 데이터를 수집하는 자동화 크롤러를 구축하였으며, 수집된 데이터를 바탕으로 빠르고 쾌적한 사용자 친화적 UI/UX를 제공합니다.
+실제 KBO 공식 홈페이지의 복잡한 구조(투명 IFRAME 등)를 뚫고 데이터를 목적에 맞게 수집하는 3개의 자동화 크롤러 파이프라인을 구축하였으며, 수집된 데이터를 바탕으로 빠르고 쾌적한 사용자 친화적 UI/UX를 제공합니다.
 
 ---
 
 ## 🚀 주요 기능 (Key Features)
 
-### 1. 스마트한 월별 일정 제공 (Smart Schedule)
-- 선택한 연도/월에 해당하는 SSG 랜더스의 경기 일정을 카드 형태로 제공합니다.
-- **Auto-Scroll UX:** 페이지 접속 시 현재 시간(KST)을 기준으로 가장 가까운 다가오는 경기 또는 오늘 경기 위치로 화면이 부드럽게 자동 스크롤되어 사용자 편의성을 극대화했습니다.
+### 1. 메인 화면: SSG 랜더스 홈 (SSG Schedule & Results)
+- 선택한 연도/월에 해당하는 **SSG 랜더스만의 경기 일정과 승패 결과**를 직관적인 카드 형태로 제공합니다.
+- 카드 클릭 시 해당 경기의 상세 기록(박스스코어) 페이지로 이동합니다.
+- **Auto-Scroll UX:** 페이지 접속 시 현재 시간(KST)을 기준으로 가장 가까운 다가오는 경기 또는 오늘 경기 위치로 화면이 부드럽게 자동 스크롤됩니다.
 
-### 2. 완벽한 경기 상세 기록 (Detailed Box Score)
-- **이닝별 스코어보드:** 단순 결과(R, H, E, B)뿐만 아니라, 1회부터 연장전(12회)까지의 이닝별 득점 상황을 동적으로 렌더링합니다.
-- **선수별 상세 기록:** 양 팀의 출장 타자(타순, 포지션, 타수/안타/타점) 및 투수(승/패/세/홀, 이닝, 실점) 기록을 직관적인 표 형태로 제공합니다.
+### 2. 전체 경기 일정 탭 (KBO All Teams Schedule)
+- SSG 랜더스뿐만 아니라, **KBO 10개 구단 전체의 월별 경기 일정과 결과**를 확인할 수 있는 통합 일정 페이지입니다.
 
-### 3. KBO 개인 기록실 (Player Statistics)
+### 3. KBO 개인 기록실 탭 (Player Statistics)
 - 타자와 투수 카테고리를 분리하여 핵심 지표(타율, 평균자책점 등)를 강조(Highlight)하여 보여줍니다.
 - **실시간 검색 (URL Query 연동):** 클라이언트 상태(State) 대신 HTML `<form method="GET">`과 Next.js 서버 컴포넌트를 활용하여, URL 파라미터(`?q=선수명`) 기반의 빠르고 가벼운 선수명 검색 기능을 구현했습니다.
 
-### 4. Playwright 기반 자동화 데이터 파이프라인
-- 일반적인 HTML 파싱(Cheerio 등)으로는 접근할 수 없는 KBO 사이트의 숨겨진 다중 IFRAME 구조를 **Playwright**를 활용해 브라우저 단에서 완벽하게 추출(Scraping)합니다.
-- 수집된 데이터는 관계형 데이터베이스인 Supabase에 JSON 및 테이블 형태로 정규화되어 적재됩니다.
+### 4. 완벽한 경기 상세 기록 (Detailed Box Score)
+- **이닝별 스코어보드:** 단순 결과(R, H, E, B)뿐만 아니라, 1회부터 연장전(12회)까지의 이닝별 득점 상황을 동적으로 렌더링합니다.
+- **선수별 상세 기록:** 양 팀의 출장 타자(타순, 포지션, 타수/안타/타점) 및 투수(승/패/세/홀, 이닝, 실점) 기록을 직관적인 표 형태로 제공합니다.
+
+### 5. 목적별로 세분화된 Playwright 데이터 파이프라인
+- 일반적인 HTML 파싱(Cheerio 등)으로는 접근할 수 없는 KBO 사이트의 구조를 뚫기 위해 **3개의 Playwright 크롤러**를 목적에 맞게 분리하여 운용합니다.
+  1. `scraper.mjs`: KBO 전체 경기 일정 및 기본 결과 수집
+  2. `boxscore-scraper.mjs`: 각 경기의 상세 박스스코어(이닝 점수, 개인 기록) 수집
+  3. `record-scraper.mjs`: KBO 개인 기록실(타자/투수 스탯) 수집
+- 수집된 데이터는 관계형 데이터베이스인 Supabase에 테이블 형태로 정규화되어 적재됩니다.
 
 ---
 
@@ -52,20 +59,15 @@ KBO 프로야구 SSG 랜더스의 월별 경기 일정, 상세 박스스코어, 
 
 ```text
 ├── src/
-│   ├── app/
-│   │   ├── page.tsx               # 메인 화면 (월별 일정 & 자동 스크롤)
-│   │   ├── game/[id]/page.tsx     # 경기 상세 기록 (박스스코어, 타자/투수 기록)
-│   │   └── stats/page.tsx         # 선수 개인 기록실 (검색 기능 포함)
-│   ├── components/
-│   │   ├── GameCard.tsx           # 일정 카드 컴포넌트
-│   │   └── AutoScroller.tsx       # 클라이언트 단 자동 스크롤 유틸 컴포넌트
-│   ├── lib/
-│   │   └── supabase.ts            # Supabase 공통 클라이언트 (싱글톤)
-│   └── services/
-│       └── schedule.ts            # 일정 관련 DB 패치 로직
+│   ├── app/               # Next.js App Router (메인, 일정, 기록실, 상세 박스스코어 라우팅)
+│   ├── components/        # 공통 UI 컴포넌트 (GameCard, AutoScroller 등)
+│   ├── services/          # Supabase DB 통신 및 데이터 패치 로직
+│   └── types/             # TypeScript 인터페이스 및 타입 정의
 ├── scripts/
-│   └── boxscore-scraper.mjs       # KBO 데이터 수집 Playwright 크롤러
-└── .env.local                     # 환경 변수 (Git 제외)
+│   ├── scraper.mjs              # 🕸️ 전체 경기 일정 수집 크롤러
+│   ├── boxscore-scraper.mjs     # 🕸️ 상세 박스스코어 수집 크롤러
+│   └── record-scraper.mjs       # 🕸️ 타자/투수 개인 기록 수집 크롤러
+└── .env.local             # 환경 변수 (Git 제외)
 ```
 
 ---
@@ -90,7 +92,9 @@ SUPABASE_ANON_KEY=your_supabase_anon_key
 ### 3. 크롤러 실행 (초기 데이터 적재)
 개발 서버를 띄우기 전, 크롤러를 실행하여 Supabase DB에 경기 및 박스스코어 데이터를 적재합니다.
 ```bash
-node scripts/boxscore-scraper.mjs
+node scripts/scraper.mjs            # 일정 데이터 세팅
+node scripts/boxscore-scraper.mjs   # 박스스코어 데이터 세팅
+node scripts/record-scraper.mjs     # 선수 기록 데이터 세팅
 ```
 
 ### 4. 로컬 개발 서버 실행
