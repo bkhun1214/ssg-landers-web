@@ -17,10 +17,10 @@ async function scrapeBoxScores() {
   const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
   const day = kstNow.getDay();
 
-  if (day === 1) {
-    console.log("📅 월요일은 경기가 없습니다. 스크립트를 종료합니다.");
-    return;
-  }
+  // if (day === 1) {
+  //   console.log("📅 월요일은 경기가 없습니다. 스크립트를 종료합니다.");
+  //   return;
+  // }
 
   const hour = kstNow.getHours();
   let targetDateDate = new Date(kstNow);
