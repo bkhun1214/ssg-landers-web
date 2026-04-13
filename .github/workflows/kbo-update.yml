@@ -36,10 +36,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: |
-          DAY=$(date +%u)
-          if [ "$DAY" -ne 1 ]; then
-            node scripts/record-scraper.mjs
-          else
-            echo "오늘은 월요일이라 기록 업데이트를 건너뜁니다."
-          fi
+        run: node scripts/record-scraper.mjs
